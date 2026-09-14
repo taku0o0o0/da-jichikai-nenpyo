@@ -75,10 +75,12 @@
   }
   .delete-btn:hover{color:var(--da-red);}
   @media print{
+    @page{margin:15mm;}
     #filters, #add-form, .delete-btn, .no-print{display:none !important;}
     body{background:#fff;}
     main{max-width:100%;padding:0;}
     .event-card{break-inside:avoid;border:1px solid #ccc;}
+    .badge{background:transparent !important;color:#212121 !important;border:1px solid #999;}
   }
 </style>
 </head>
@@ -184,14 +186,18 @@ function renderFilters(){
 
 function renderTimeline(){
   const el = document.getElementById("timeline");
-  const visible = allEvents.filter(e => activeTeams.has(e.team));
+  const visible = allEvents.filter(e => {
+    const teamKey = TEAMS[e.team] ? e.team : "all";
+    return activeTeams.has(teamKey);
+  });
   if (visible.length === 0){
     el.innerHTML = '<p class="empty-msg">表示できる出来事がありません</p>';
     return;
   }
   el.innerHTML = "";
   visible.forEach(e => {
-    const t = TEAMS[e.team] || TEAMS.all;
+    const teamKey = TEAMS[e.team] ? e.team : "all";
+    const t = TEAMS[teamKey];
     const card = document.createElement("div");
     card.className = "event-card";
     card.style.setProperty("--card-color", t.color);
@@ -200,9 +206,9 @@ function renderTimeline(){
       <div class="row">
         <span class="event-date">${escapeHtml(e.date)}</span>
         <span class="badge${t.textDark ? " pr-badge" : ""}">${t.label}</span>
-        <span class="event-type">${escapeHtml(e.eventType)}</span>
+        <span class="event-type">${escapeHtml(e.eventType ?? "")}</span>
       </div>
-      <div class="event-title">${escapeHtml(e.title)}</div>
+      <div class="event-title">${escapeHtml(e.title ?? "")}</div>
       ${e.memo ? `<div class="event-memo">${escapeHtml(e.memo)}</div>` : ""}
     `;
     card.querySelector(".delete-btn").addEventListener("click", () => deleteEvent(e.id));
@@ -218,14 +224,26 @@ onSnapshot(q, snap => {
   renderTimeline();
 }, err => {
   document.getElementById("timeline").innerHTML =
-    `<p class="empty-msg">データの読み込みに失敗しました: ${err.message}</p>`;
+    `<p class="empty-msg">データの読み込みに失敗しました: ${escapeHtml(err.message)}</p>`;
 });
 
 const PASS_KEY = "da-nenpyo-pass";
 const CORRECT_PASS = "DA";
 
-function getSavedPass(){ return localStorage.getItem(PASS_KEY) || ""; }
-function setSavedPass(p){ localStorage.setItem(PASS_KEY, p); }
+function getSavedPass(){
+  try {
+    return localStorage.getItem(PASS_KEY) || "";
+  } catch (err) {
+    return "";
+  }
+}
+function setSavedPass(p){
+  try {
+    localStorage.setItem(PASS_KEY, p);
+  } catch (err) {
+    // best-effort remembering; not critical if it fails
+  }
+}
 
 function askPass(){
   const saved = getSavedPass();
@@ -253,22 +271,34 @@ document.getElementById("f-submit").addEventListener("click", async () => {
   const pass = askPass();
   if (!pass) return;
 
-  await addDoc(eventsRef, {
-    date, team, eventType, title, memo,
-    deleted: false,
-    pass,
-    createdAt: serverTimestamp()
-  });
+  const submitBtn = document.getElementById("f-submit");
+  submitBtn.disabled = true;
+  try {
+    await addDoc(eventsRef, {
+      date, team, eventType, title, memo,
+      deleted: false,
+      pass,
+      createdAt: serverTimestamp()
+    });
 
-  document.getElementById("f-title").value = "";
-  document.getElementById("f-memo").value = "";
+    document.getElementById("f-title").value = "";
+    document.getElementById("f-memo").value = "";
+  } catch (err) {
+    alert("保存に失敗しました: " + err.message);
+  } finally {
+    submitBtn.disabled = false;
+  }
 });
 
 async function deleteEvent(id){
   const pass = askPass();
   if (!pass) return;
   if (!confirm("この出来事を削除しますか？")) return;
-  await updateDoc(doc(db, "events", id), { deleted: true, pass });
+  try {
+    await updateDoc(doc(db, "events", id), { deleted: true, pass });
+  } catch (err) {
+    alert("削除に失敗しました: " + err.message);
+  }
 }
 
 renderFilters();
