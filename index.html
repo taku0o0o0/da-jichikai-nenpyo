@@ -30,6 +30,29 @@
   header h1{margin:0;font-size:1.4rem;}
   main{max-width:720px;margin:0 auto;padding:16px;}
   .empty-msg{color:var(--muted);text-align:center;padding:24px 0;}
+  #filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+  .filter-chip{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:6px 12px;border-radius:999px;
+    border:2px solid var(--chip-color,#999);
+    background:#fff;color:var(--chip-color,#333);
+    font-size:0.85rem;cursor:pointer;user-select:none;
+  }
+  .filter-chip.off{background:#eee;color:#aaa;border-color:#ccc;}
+  .filter-chip .dot{width:10px;height:10px;border-radius:50%;background:var(--chip-color,#999);}
+  #timeline{display:flex;flex-direction:column;gap:12px;}
+  .event-card{
+    background:var(--card);border:1px solid var(--border);
+    border-left:6px solid var(--card-color,#999);
+    border-radius:8px;padding:12px 14px;position:relative;
+  }
+  .event-card .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px;}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:0.75rem;color:#fff;background:var(--card-color,#999);}
+  .badge.pr-badge{color:#212121;}
+  .event-date{font-size:0.85rem;color:var(--muted);}
+  .event-type{font-size:0.8rem;color:var(--muted);}
+  .event-title{font-weight:bold;font-size:1.05rem;margin:4px 0;}
+  .event-memo{font-size:0.9rem;color:#555;white-space:pre-wrap;}
 </style>
 </head>
 <body>
@@ -63,17 +86,80 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const eventsRef = collection(db, "events");
 
+const TEAMS = {
+  support:   { label: "学生支援班",         color: "#e53935", textDark:false },
+  survey:    { label: "アンケート班",       color: "#1e88e5", textDark:false },
+  pr:        { label: "広報班",             color: "#fdd835", textDark:true  },
+  project:   { label: "プロジェクト",       color: "#8e24aa", textDark:false },
+  promotion: { label: "DA自治会推進委員会", color: "#757575", textDark:false },
+  all:       { label: "全体共通",           color: "#212121", textDark:false },
+};
+
+const activeTeams = new Set(Object.keys(TEAMS));
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
+function renderFilters(){
+  const el = document.getElementById("filters");
+  el.innerHTML = "";
+  Object.entries(TEAMS).forEach(([key, t]) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "filter-chip" + (activeTeams.has(key) ? "" : " off");
+    chip.style.setProperty("--chip-color", t.color);
+    chip.innerHTML = `<span class="dot"></span>${t.label}`;
+    chip.addEventListener("click", () => {
+      if (activeTeams.has(key)) activeTeams.delete(key);
+      else activeTeams.add(key);
+      renderFilters();
+      renderTimeline();
+    });
+    el.appendChild(chip);
+  });
+}
+
+function renderTimeline(){
+  const el = document.getElementById("timeline");
+  const visible = allEvents.filter(e => activeTeams.has(e.team));
+  if (visible.length === 0){
+    el.innerHTML = '<p class="empty-msg">表示できる出来事がありません</p>';
+    return;
+  }
+  el.innerHTML = "";
+  visible.forEach(e => {
+    const t = TEAMS[e.team] || TEAMS.all;
+    const card = document.createElement("div");
+    card.className = "event-card";
+    card.style.setProperty("--card-color", t.color);
+    card.innerHTML = `
+      <div class="row">
+        <span class="event-date">${escapeHtml(e.date)}</span>
+        <span class="badge${t.textDark ? " pr-badge" : ""}">${t.label}</span>
+        <span class="event-type">${escapeHtml(e.eventType)}</span>
+      </div>
+      <div class="event-title">${escapeHtml(e.title)}</div>
+      ${e.memo ? `<div class="event-memo">${escapeHtml(e.memo)}</div>` : ""}
+    `;
+    el.appendChild(card);
+  });
+}
+
 let allEvents = [];
 
 const q = query(eventsRef, orderBy("date", "asc"));
 onSnapshot(q, snap => {
   allEvents = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => !e.deleted);
-  document.getElementById("timeline").innerHTML =
-    `<p class="empty-msg">接続OK。イベント件数: ${allEvents.length}</p>`;
+  renderTimeline();
 }, err => {
   document.getElementById("timeline").innerHTML =
     `<p class="empty-msg">データの読み込みに失敗しました: ${err.message}</p>`;
 });
+
+renderFilters();
 </script>
 </body>
 </html>
