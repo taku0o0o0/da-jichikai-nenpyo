@@ -74,6 +74,12 @@
     font-size:1rem;color:#bbb;
   }
   .delete-btn:hover{color:var(--da-red);}
+  @media print{
+    #filters, #add-form, .delete-btn, .no-print{display:none !important;}
+    body{background:#fff;}
+    main{max-width:100%;padding:0;}
+    .event-card{break-inside:avoid;border:1px solid #ccc;}
+  }
 </style>
 </head>
 <body>
